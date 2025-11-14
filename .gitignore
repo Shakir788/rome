@@ -1,0 +1,19 @@
+# Python virtual environments
+.venv
+venv/
+env/
+__pycache__/
+*.pyc
+
+# IDE files (VS Code, etc.)
+.vscode/
+
+# Environment Variables (Crucial for API Key safety)
+.env
+
+# Runtime Data files (Created by app.py)
+rome_chats.json
+rome_memory.json
+
+# Temporary files
+*.tmp

@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ROME — Personal AI</title>
+    <link rel="stylesheet" href="/static/style.css"> 
+</head>
+<body>
+    <div id="app-container">
+        <aside id="sidebar">
+            <header class="sidebar-header">
+                <button id="new-chat-btn" class="icon-button">
+                    <span class="material-symbols-outlined">add_comment</span>
+                    New Chat
+                </button>
+            </header>
+            
+            <div id="chat-history">
+                <p class="history-label">Past Conversations</p>
+                </div>
+
+            <footer id="sidebar-footer">
+                <div class="footer-item">
+                    <span class="material-symbols-outlined">settings</span>
+                    Settings & Help
+                </div>
+                <div class="footer-item">
+                    <span class="material-symbols-outlined">person</span>
+                    Creator Memory
+                </div>
+            </footer>
+        </aside>
+
+        <main id="main-content">
+            <header id="chat-header">
+                <h1>Welcome to ROME</h1>
+                <img src="/static/assets/rome_logo.png" alt="ROME Logo" class="header-logo">
+            </header>
+
+            <div id="chat-window">
+                <div class="message assistant-message">
+                    <img src="/static/assets/rome_logo.png" alt="ROME" class="avatar">
+                    <div class="content">
+                        Hello! I am ROME, an intelligent assistant created by Mohammad. How can I help you today?
+                    </div>
+                </div>
+            </div>
+
+            <div id="input-area-wrapper">
+                <div id="tools-popover" class="hidden">
+                    <div class="popover-item" id="voice-chat-option">
+                        <span class="material-symbols-outlined">mic</span>
+                        Voice Chat (Record)
+                    </div>
+                    <div class="popover-item" id="upload-audio-option">
+                        <span class="material-symbols-outlined">upload_file</span>
+                        Upload Audio/PDF
+                    </div>
+                    <div class="popover-item">
+                        <span class="material-symbols-outlined">description</span>
+                        PDF Analyzer
+                    </div>
+                </div>
+
+                <div id="input-bar">
+                    <button id="tools-btn" class="icon-button">
+                        <span class="material-symbols-outlined">add</span>
+                    </button>
+                    
+                    <input type="text" id="user-input" placeholder="Type your message here...">
+
+                    <button id="send-btn" class="icon-button">
+                        <span class="material-symbols-outlined">send</span>
+                    </button>
+                </div>
+                <p id="disclaimer">ROME can make mistakes, so double-check it.</p>
+            </div>
+        </main>
+    </div>
+
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" />
+    <script src="/static/script.js"></script>
+</body>
+</html>
