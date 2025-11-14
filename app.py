@@ -14,7 +14,6 @@ load_dotenv()
 app = Flask(__name__) 
 
 # --- Configuration ---
-# Keys are now set up to prioritize the working key (OpenRouter)
 API_KEY = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "openai/gpt-4o-mini") 
 TRANSCRIPTION_MODEL = "openai/whisper-1" 
@@ -42,12 +41,30 @@ def load_json(path, default):
             return default
     return default
 
+# --- NEW: Function to prepare multimodal content (text + image) ---
+def prepare_content_array(text_prompt, image_b64):
+    """Prepares the content array for multimodal API call."""
+    content = []
+    
+    # Add text part
+    content.append({"type": "text", "text": text_prompt})
+    
+    # Add image part if image_b64 is provided
+    if image_b64:
+        # The base64 string includes the header (e.g., data:image/jpeg;base64,...)
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": image_b64}
+        })
+        
+    return content
+
+
 @retry(stop=stop_after_attempt(5), wait=wait_fixed(3)) 
 def call_text_model(messages: list, max_tokens: int = 800, timeout: int = 60):
     if not API_KEY:
         return "[No API key found.]"
     
-    # Using the user's found working OpenRouter endpoint
     url = "https://openrouter.ai/api/v1/chat/completions"
     
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
@@ -66,7 +83,7 @@ def call_text_model(messages: list, max_tokens: int = 800, timeout: int = 60):
              return f"[Error: NameResolutionError. Code is correct, deployment server has DNS issue.]"
         return f"[Error: {str(e)}]"
 
-# --- Transcription Function ---
+# --- Transcription Function (Remains the same) ---
 
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
 def transcribe_audio(audio_file_bytes):
@@ -131,12 +148,10 @@ def delete_chat():
     if not chat_id:
         return jsonify({"error": "Missing chat ID"}), 400
 
-    # Filter out the chat to be deleted
     global chats
     try:
         chat_id = int(chat_id)
         
-        # New list excluding the chat ID
         new_conversations = [c for c in chats["conversations"] if c["id"] != chat_id]
         
         if len(new_conversations) == len(chats["conversations"]):
@@ -158,6 +173,8 @@ def handle_chat():
     data = request.get_json()
     user_msg = data.get("message")
     chat_id = data.get("chat_id")
+    # NEW: Get image data from frontend
+    image_b64 = data.get("image_b64")
     
     if not user_msg or not chat_id:
         return jsonify({"error": "Missing message or chat ID"}), 400
@@ -169,21 +186,36 @@ def handle_chat():
         chats["conversations"].append(active_conv)
         save_json(CHATS_FILE, chats)
 
-    active_conv["messages"].append({"role": "user", "content": user_msg})
+    # 1. Add User Message (Storing image data if present)
+    user_message_object = {"role": "user", "content": user_msg}
+    if image_b64:
+        # Store image data in the chat history object for future re-load
+        user_message_object["image_b64"] = image_b64 
+    active_conv["messages"].append(user_message_object)
 
+    # 2. Prepare Messages for API (Multimodal Context)
     api_messages = [
         {"role": "system", "content": SYSTEM_PERSONALITY}
     ]
-    context_messages = active_conv["messages"][-8:]
-    api_messages.extend(context_messages)
     
+    # We must construct the message array based on the API's multimodal requirements.
+    # The last message (user_msg) must use the content array structure.
+    for msg in active_conv["messages"][:-1]:
+        api_messages.append(msg)
+        
+    # The current user message needs the multimodal array
+    content_array = prepare_content_array(user_msg, image_b64)
+    api_messages.append({"role": "user", "content": content_array})
+
+    # 3. Call Model
     rome_resp_content = call_text_model(api_messages)
 
+    # 4. Add Assistant Message & Save
     rome_resp = {"role": "assistant", "content": rome_resp_content}
     active_conv["messages"].append(rome_resp)
     save_json(CHATS_FILE, chats)
     
-    # --- AUTO RENAME LOGIC (Step 3 already implemented) ---
+    # Auto Rename Logic
     if len(active_conv["messages"]) == 2 and active_conv["title"] == "New Chat":
         title_prompt = f"Generate a concise title (max 5 words) for this conversation: {user_msg}"
         generated_title = call_text_model([
