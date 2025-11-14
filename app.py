@@ -32,6 +32,8 @@ app = Flask(__name__, static_folder='static', template_folder='templates')
 # --- Configuration ---
 API_KEY = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "openai/gpt-4o-mini")
+# NEW: multimodal model to use only when sending images — minimal change to original flow
+MULTIMODAL_MODEL = os.getenv("MULTIMODAL_MODEL", "moondream/moondream-2")
 TRANSCRIPTION_MODEL = os.getenv("TRANSCRIPTION_MODEL", "openai/whisper-1")
 
 SYSTEM_PERSONALITY = """You are ROME — a warm, intelligent assistant created by Mohammad from India for his friend.
@@ -355,7 +357,7 @@ def handle_chat():
                 rel_path = rel_path.replace(request.host_url.rstrip('/'), '')
             # remove leading /static/uploads/ if present
             filename_part = rel_path.split('/')[-1]
-            abs_path = os.path.join(UPLOAD_DIR, filename_part)
+            abs_path = os.path.join(Upload_DIR := UPLOAD_DIR, filename_part)
 
             with open(abs_path, "rb") as f:
                 raw = f.read()
@@ -365,8 +367,9 @@ def handle_chat():
             mm_content = prepare_content_array(user_msg, img_b64)
 
             # Build body for multimodal call exactly (content array as user content)
+            # Use MULTIMODAL_MODEL here so we don't change user's default MODEL_NAME for text-only calls
             mm_body = {
-                "model": MODEL_NAME,
+                "model": MULTIMODAL_MODEL,
                 "messages": [
                     {"role": "system", "content": SYSTEM_PERSONALITY},
                     {"role": "user", "content": mm_content}
@@ -375,6 +378,7 @@ def handle_chat():
             }
 
             headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+            print(f"[MULTIMODAL] sending to model: {MULTIMODAL_MODEL}")
             r = requests.post("https://openrouter.ai/api/v1/chat/completions", json=mm_body, headers=headers, timeout=60)
             r.raise_for_status()
             mm_data = r.json()
