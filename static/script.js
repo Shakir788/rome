@@ -5,6 +5,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let isRecording = false; 
     let mediaRecorder = null; 
     let audioChunks = []; 
+    // NEW: Variable to hold the image data
+    let uploadedImageBase64 = null; 
 
     // --- 2. Element Selectors ---
     const chatWindow = document.getElementById('chat-window');
@@ -19,6 +21,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const toolsPopover = document.getElementById('tools-popover');
     const voiceChatOption = document.getElementById('voice-chat-option'); 
     const toolsBtnIcon = toolsBtn.querySelector('.material-symbols-outlined'); 
+    // NEW: Image Input Selector
+    const imageUploadInput = document.getElementById('image-upload-input');
 
     const ROME_AVATAR = '/static/assets/rome_logo.png';
     const USER_AVATAR = 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
@@ -33,7 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
         chatWindow.scrollTop = chatWindow.scrollHeight;
     }
 
-    function renderMessage(role, content, shouldScroll = true) {
+    function renderMessage(role, content, shouldScroll = true, imageBase64 = null) {
         const avatarSrc = (role === 'assistant') ? ROME_AVATAR : USER_AVATAR;
 
         const messageContainer = document.createElement('div');
@@ -47,10 +51,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const contentDiv = document.createElement('div');
         contentDiv.classList.add('content');
+        
+        // Render Image if available
+        if (imageBase64) {
+            const imgEl = document.createElement('img');
+            imgEl.src = imageBase64;
+            imgEl.classList.add('uploaded-image-preview');
+            // NEW CSS: Add minimal styling for the image preview
+            imgEl.style.maxWidth = '200px'; 
+            imgEl.style.borderRadius = '8px';
+            imgEl.style.marginBottom = '10px';
+            contentDiv.appendChild(imgEl);
+            contentDiv.appendChild(document.createElement('br'));
+        }
+
         const formattedContent = content
             .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
             .replace(/\n/g, '<br>');
-        contentDiv.innerHTML = formattedContent; 
+        
+        contentDiv.innerHTML += formattedContent; 
 
         messageContainer.appendChild(avatarImg);
         messageContainer.appendChild(contentDiv);
@@ -95,7 +114,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         selectedChat.messages.forEach(msg => {
-            renderMessage(msg.role, msg.content, false); 
+            // Pass imageBase64 if available in the message object (to be added later in backend)
+            renderMessage(msg.role, msg.content, false, msg.image_b64); 
         });
 
         scrollToBottom(); 
@@ -123,7 +143,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             itemDiv.addEventListener('click', () => loadChat(chat.id));
             
-            // --- NEW: Add Context Menu Listener ---
+            // --- Add Context Menu Listener ---
             itemDiv.addEventListener('contextmenu', (e) => {
                 e.preventDefault(); 
                 showContextMenu(e.clientX, e.clientY, chat.id);
@@ -140,7 +160,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- NEW: Context Menu Functions ---
+    // --- Context Menu Functions (Same as previous step) ---
 
     function removeContextMenu() {
         const menu = document.getElementById(contextMenuId);
@@ -156,13 +176,11 @@ document.addEventListener('DOMContentLoaded', () => {
         menu.id = contextMenuId;
         menu.classList.add('context-menu');
         
-        // Prevent menu from going off-screen (basic check)
         const screenWidth = window.innerWidth;
         const screenHeight = window.innerHeight;
         menu.style.left = `${x > screenWidth - 200 ? screenWidth - 200 : x}px`;
         menu.style.top = `${y > screenHeight - 100 ? screenHeight - 100 : y}px`;
         
-        // Add Delete Option
         menu.innerHTML = `
             <div class="menu-item delete-option" data-chat-id="${chatId}">
                 <span class="material-symbols-outlined">delete</span>
@@ -172,9 +190,8 @@ document.addEventListener('DOMContentLoaded', () => {
         
         body.appendChild(menu);
 
-        // Add Listener to Delete Option
         document.querySelector('.delete-option').addEventListener('click', async (e) => {
-            e.stopPropagation(); // Stop propagation to prevent context menu close click
+            e.stopPropagation(); 
             removeContextMenu();
             const confirmed = confirm(`Are you sure you want to delete "${chats.find(c => c.id === chatId)?.title || 'this chat'}" permanently?`);
             if (confirmed) {
@@ -186,7 +203,7 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('click', removeContextMenu);
     document.addEventListener('scroll', removeContextMenu);
 
-    // --- NEW: Delete Chat Logic ---
+    // --- Delete Chat Logic (Same as previous step) ---
     async function deleteChat(chatId) {
         try {
             const response = await fetch('/api/chat/delete', {
@@ -198,13 +215,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
 
             if (data.success) {
-                // Remove chat from local array
                 chats = chats.filter(c => c.id !== chatId);
-                
-                // Re-render history
                 renderChatHistory();
                 
-                // If the deleted chat was the active one, load the latest chat
                 if (currentChatId === chatId) {
                     loadChat(chats.length > 0 ? chats[chats.length - 1].id : null);
                 }
@@ -219,14 +232,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 
-    // --- 4. Core Chat Logic (Remains the same) ---
+    // --- 4. Core Chat Logic ---
 
     async function sendMessage(messageFromAudio = null) {
-        const message = messageFromAudio || userInput.value.trim();
-        if (message === "" || currentChatId === null) return;
+        let message = messageFromAudio || userInput.value.trim();
+        let imageB64 = uploadedImageBase64; 
+
+        if (message === "" && !imageB64 || currentChatId === null) return;
         
+        // If image is uploaded but no text, use a default prompt
+        if (message === "" && imageB64) {
+             message = "Please analyze this image and provide a detailed description.";
+        }
+        
+        // Render user message with image preview
         if (!messageFromAudio) {
-            renderMessage('user', message);
+            renderMessage('user', message, true, imageB64);
             userInput.value = ''; 
         } else if (!messageFromAudio.startsWith('🎤 (Voice):')) {
             renderMessage('user', `🎤 (Voice): ${messageFromAudio}`);
@@ -234,20 +255,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const messageToSend = message;
         sendBtn.disabled = true;
+        
+        // Clear state variables for next message
+        uploadedImageBase64 = null;
+        imageUploadInput.value = '';
+        if (imageB64) {
+            userInput.placeholder = "Type your message here...";
+        }
 
         try {
             const response = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message: messageToSend, chat_id: currentChatId })
+                body: JSON.stringify({ 
+                    message: messageToSend, 
+                    chat_id: currentChatId,
+                    // NEW: Send image data to the backend
+                    image_b64: imageB64 
+                })
             });
 
             const data = await response.json();
-
+            // ... (rest of the chat logic is the same)
             if (!response.ok || data.error || data.response.content.startsWith('[Error:')) {
                 const errorContent = data.error || data.response.content || `HTTP Error ${response.status}`;
                 renderMessage('assistant', `[API Error]: **${errorContent}**`);
             } else {
+                // We don't expect the assistant response to have an image, so no imageB64 here
                 renderMessage('assistant', data.response.content);
                 
                 const updatedChat = data.updated_chat;
@@ -269,7 +303,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- 5. Core Voice Logic (Remains the same) ---
+    // --- NEW: Image Upload Handler ---
+    imageUploadInput.addEventListener('change', (event) => {
+        toolsPopover.classList.add('hidden'); 
+        const file = event.target.files[0];
+
+        if (file) {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                uploadedImageBase64 = e.target.result;
+                userInput.placeholder = `Image uploaded (${file.name}). Add a message or press send.`;
+                userInput.focus();
+            };
+            reader.readAsDataURL(file);
+        }
+    });
+
+
+    // --- 5. Core Voice Logic (Same as previous step) ---
     async function toggleRecording() {
         toolsPopover.classList.add('hidden'); 
         
@@ -339,7 +390,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- 6. Event Listeners (Added Context Menu Listeners) ---
+    // --- 6. Event Listeners (Same as previous step) ---
     sendBtn.addEventListener('click', () => sendMessage());
 
     userInput.addEventListener('keypress', (e) => {
@@ -371,7 +422,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     voiceChatOption.addEventListener('click', toggleRecording);
     
-    // --- 7. Initialization ---
+    // --- 7. Initialization (Same as previous step) ---
     async function init() {
         try {
             const response = await fetch('/api/chats');
