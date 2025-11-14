@@ -13,11 +13,11 @@ from tenacity import retry, stop_after_attempt, wait_fixed
 load_dotenv()
 app = Flask(__name__) 
 
-# --- Configuration ---
-# API Keys and Models
-OPENROUTER_KEY = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
-MODEL_NAME = os.getenv("MODEL_NAME", "openai/gpt-4o-mini")
-TRANSCRIPTION_MODEL = "openai/whisper-1" # Model for audio transcription
+# --- Configuration (UPDATED FOR OPENAI ENDPOINT) ---
+# OPENAI_API_KEY will be used as the primary key from Render secrets
+API_KEY = os.getenv("OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY") # Check both keys
+MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini") # Model name updated for OpenAI standard
+TRANSCRIPTION_MODEL = "whisper-1" # Model name updated for OpenAI standard
 
 SYSTEM_PERSONALITY = """You are ROME — a warm, intelligent assistant created by Mohammad from India for his friend.
 Creator: Mohammad — software developer, graphic designer, social media manager, makeup artist.
@@ -39,16 +39,19 @@ def load_json(path, default):
             with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
         except Exception:
-            # Handle empty or corrupted JSON gracefully
             return default
     return default
 
 @retry(stop=stop_after_attempt(5), wait=wait_fixed(3)) 
 def call_text_model(messages: list, max_tokens: int = 800, timeout: int = 60):
-    if not OPENROUTER_KEY:
+    if not API_KEY:
         return "[No API key found.]"
-    url = "https://api.openrouter.ai/v1/chat/completions"
-    headers = {"Authorization": f"Bearer {OPENROUTER_KEY}", "Content-Type": "application/json"}
+    
+    # URL CHANGED TO OPENAI DIRECT ENDPOINT
+    url = "https://api.openai.com/v1/chat/completions"
+    
+    # Headers updated for standard OpenAI format
+    headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
     body = {
         "model": MODEL_NAME,
         "messages": messages,
@@ -60,23 +63,20 @@ def call_text_model(messages: list, max_tokens: int = 800, timeout: int = 60):
         data = r.json()
         return data["choices"][0]["message"]["content"].strip() if data.get("choices") else str(data)
     except Exception as e:
-        # Added a check for NameResolutionError specifically
-        if 'getaddrinfo failed' in str(e):
-             return f"[Error: NameResolutionError. This is a local network issue. Code is correct, please try deployment.]"
         return f"[Error: {str(e)}]"
 
-# --- Transcription Function ---
+# --- Transcription Function (UPDATED FOR OPENAI ENDPOINT) ---
 
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
 def transcribe_audio(audio_file_bytes):
-    """Uses OpenRouter's transcription endpoint to convert audio to text."""
-    if not OPENROUTER_KEY:
+    """Uses OpenAI's transcription endpoint to convert audio to text."""
+    if not API_KEY:
         return {"error": "API key missing."}
 
-    url = "https://api.openrouter.ai/v1/audio/transcriptions"
-    headers = {"Authorization": f"Bearer {OPENROUTER_KEY}"}
+    # URL CHANGED TO OPENAI DIRECT TRANSCRIPTION ENDPOINT
+    url = "https://api.openai.com/v1/audio/transcriptions"
+    headers = {"Authorization": f"Bearer {API_KEY}"}
     
-    # Use a temporary file to save the audio bytes
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
         tmp.write(audio_file_bytes)
         temp_path = tmp.name
@@ -90,6 +90,7 @@ def transcribe_audio(audio_file_bytes):
                 'model': TRANSCRIPTION_MODEL,
             }
             
+            # NOTE: requests.post with 'files' argument handles multipart/form-data automatically
             r = requests.post(url, headers=headers, files=files, data=data, timeout=60)
             r.raise_for_status()
             response_data = r.json()
@@ -114,22 +115,19 @@ def get_active_conv(chat_id):
     except ValueError:
         return None
 
-# --- Flask Routes ---
+# --- Flask Routes (Remains the same) ---
 
 @app.route("/")
 def index():
-    """Renders the main index.html file."""
     return render_template("index.html")
 
 @app.route("/api/chats", methods=["GET"])
 def get_chats():
-    """Returns the full list of conversations for the sidebar."""
     return jsonify(chats["conversations"])
 
 
 @app.route("/api/chat", methods=["POST"])
 def handle_chat():
-    """Handles new user messages and returns ROME's response."""
     data = request.get_json()
     user_msg = data.get("message")
     chat_id = data.get("chat_id")
@@ -144,25 +142,20 @@ def handle_chat():
         chats["conversations"].append(active_conv)
         save_json(CHATS_FILE, chats)
 
-    # 1. Add User Message
     active_conv["messages"].append({"role": "user", "content": user_msg})
 
-    # 2. Prepare Messages for API (Context Memory)
     api_messages = [
         {"role": "system", "content": SYSTEM_PERSONALITY}
     ]
     context_messages = active_conv["messages"][-8:]
     api_messages.extend(context_messages)
     
-    # 3. Call Model
     rome_resp_content = call_text_model(api_messages)
 
-    # 4. Add Assistant Message & Save
     rome_resp = {"role": "assistant", "content": rome_resp_content}
     active_conv["messages"].append(rome_resp)
     save_json(CHATS_FILE, chats)
     
-    # Optional: Generate title for new chat
     if len(active_conv["messages"]) == 2 and active_conv["title"] == "New Chat":
         title_prompt = f"Generate a concise title (max 5 words) for this conversation: {user_msg}"
         generated_title = call_text_model([
@@ -172,20 +165,17 @@ def handle_chat():
         active_conv["title"] = generated_title.replace('"', '').strip()
         save_json(CHATS_FILE, chats)
 
-    # 5. Return the full updated conversation
     return jsonify({"response": rome_resp, "updated_chat": active_conv})
 
 
 @app.route("/api/transcribe", methods=["POST"])
 def handle_transcribe():
-    """Receives audio blob, transcribes it, and returns the text."""
     if 'audio_file' not in request.files:
         return jsonify({"error": "No audio file provided"}), 400
 
     audio_file = request.files['audio_file']
     audio_bytes = audio_file.read()
     
-    # Perform transcription
     result = transcribe_audio(audio_bytes)
 
     if result.get("error"):
