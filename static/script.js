@@ -5,7 +5,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let isRecording = false; 
     let mediaRecorder = null; 
     let audioChunks = []; 
-    // NEW: Variable to hold the image data
     let uploadedImageBase64 = null; 
 
     // --- 2. Element Selectors ---
@@ -20,24 +19,25 @@ document.addEventListener('DOMContentLoaded', () => {
     const toolsBtn = document.getElementById('tools-btn');
     const toolsPopover = document.getElementById('tools-popover');
     const voiceChatOption = document.getElementById('voice-chat-option'); 
-    const toolsBtnIcon = toolsBtn.querySelector('.material-symbols-outlined'); 
-    // NEW: Image Input Selector
+    const toolsBtnIcon = toolsBtn ? toolsBtn.querySelector('.material-symbols-outlined') : null; 
     const imageUploadInput = document.getElementById('image-upload-input');
 
     const ROME_AVATAR = '/static/assets/rome_logo.png';
     const USER_AVATAR = 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
 
-    // --- NEW: Context Menu (For Delete) ---
+    // --- Context Menu Setup ---
     const contextMenuId = 'history-context-menu';
     const body = document.body;
 
     // --- 3. Utility Functions ---
     
     function scrollToBottom() {
-        chatWindow.scrollTop = chatWindow.scrollHeight;
+        if (chatWindow) chatWindow.scrollTop = chatWindow.scrollHeight;
     }
 
     function renderMessage(role, content, shouldScroll = true, imageBase64 = null) {
+        if (!chatWindow) return; // Basic check
+
         const avatarSrc = (role === 'assistant') ? ROME_AVATAR : USER_AVATAR;
 
         const messageContainer = document.createElement('div');
@@ -57,7 +57,6 @@ document.addEventListener('DOMContentLoaded', () => {
             const imgEl = document.createElement('img');
             imgEl.src = imageBase64;
             imgEl.classList.add('uploaded-image-preview');
-            // NEW CSS: Add minimal styling for the image preview
             imgEl.style.maxWidth = '200px'; 
             imgEl.style.borderRadius = '8px';
             imgEl.style.marginBottom = '10px';
@@ -81,15 +80,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    /** Clears chat window and loads messages for the given chat ID. */
+    // --- (loadChat, renderChatHistory, Context Menu Functions - Remainder of code) ---
     function loadChat(chatId) {
         const selectedChat = chats.find(c => c.id === chatId);
         if (!selectedChat) {
-            // After deletion, if active chat is deleted, load the latest chat
             if (chats.length > 0) {
                  loadChat(chats[chats.length - 1].id);
             } else {
-                 // If no chats remain, start a new one (click the New Chat button)
                  const newId = Date.now();
                  const newChat = { id: newId, title: "New Chat", messages: [] }; 
                  chats.push(newChat);
@@ -101,8 +98,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         currentChatId = chatId;
-        chatHeaderTitle.textContent = selectedChat.title;
-        chatWindow.innerHTML = ''; 
+        if (chatHeaderTitle) chatHeaderTitle.textContent = selectedChat.title;
+        if (chatWindow) chatWindow.innerHTML = ''; 
 
         document.querySelectorAll('.history-item').forEach(item => {
             item.classList.remove('active');
@@ -114,15 +111,15 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         selectedChat.messages.forEach(msg => {
-            // Pass imageBase64 if available in the message object (to be added later in backend)
             renderMessage(msg.role, msg.content, false, msg.image_b64); 
         });
 
         scrollToBottom(); 
     }
 
-    /** Fetches and renders the list of chats in the sidebar. */
     function renderChatHistory() {
+        if (!chatHistoryContainer) return;
+
         const historyLabel = chatHistoryContainer.querySelector('.history-label');
         let nextSibling = historyLabel ? historyLabel.nextSibling : chatHistoryContainer.firstChild;
         while (nextSibling) {
@@ -143,7 +140,6 @@ document.addEventListener('DOMContentLoaded', () => {
             
             itemDiv.addEventListener('click', () => loadChat(chat.id));
             
-            // --- Add Context Menu Listener ---
             itemDiv.addEventListener('contextmenu', (e) => {
                 e.preventDefault(); 
                 showContextMenu(e.clientX, e.clientY, chat.id);
@@ -159,8 +155,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     }
-
-    // --- Context Menu Functions (Same as previous step) ---
 
     function removeContextMenu() {
         const menu = document.getElementById(contextMenuId);
@@ -203,7 +197,6 @@ document.addEventListener('DOMContentLoaded', () => {
     document.addEventListener('click', removeContextMenu);
     document.addEventListener('scroll', removeContextMenu);
 
-    // --- Delete Chat Logic (Same as previous step) ---
     async function deleteChat(chatId) {
         try {
             const response = await fetch('/api/chat/delete', {
@@ -248,18 +241,18 @@ document.addEventListener('DOMContentLoaded', () => {
         // Render user message with image preview
         if (!messageFromAudio) {
             renderMessage('user', message, true, imageB64);
-            userInput.value = ''; 
+            if (userInput) userInput.value = ''; 
         } else if (!messageFromAudio.startsWith('🎤 (Voice):')) {
             renderMessage('user', `🎤 (Voice): ${messageFromAudio}`);
         }
 
         const messageToSend = message;
-        sendBtn.disabled = true;
+        if (sendBtn) sendBtn.disabled = true;
         
         // Clear state variables for next message
         uploadedImageBase64 = null;
-        imageUploadInput.value = '';
-        if (imageB64) {
+        if (imageUploadInput) imageUploadInput.value = '';
+        if (userInput && imageB64) {
             userInput.placeholder = "Type your message here...";
         }
 
@@ -270,18 +263,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({ 
                     message: messageToSend, 
                     chat_id: currentChatId,
-                    // NEW: Send image data to the backend
                     image_b64: imageB64 
                 })
             });
 
             const data = await response.json();
-            // ... (rest of the chat logic is the same)
+
             if (!response.ok || data.error || data.response.content.startsWith('[Error:')) {
                 const errorContent = data.error || data.response.content || `HTTP Error ${response.status}`;
                 renderMessage('assistant', `[API Error]: **${errorContent}**`);
             } else {
-                // We don't expect the assistant response to have an image, so no imageB64 here
                 renderMessage('assistant', data.response.content);
                 
                 const updatedChat = data.updated_chat;
@@ -291,7 +282,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 
                 if (updatedChat.title !== chatHeaderTitle.textContent) {
-                    chatHeaderTitle.textContent = updatedChat.title;
+                    if (chatHeaderTitle) chatHeaderTitle.textContent = updatedChat.title;
                     renderChatHistory(); 
                 }
             }
@@ -299,31 +290,33 @@ document.addEventListener('DOMContentLoaded', () => {
             renderMessage('assistant', `[Network Error]: **Failed to connect to backend.**`);
             console.error('Fetch error:', error);
         } finally {
-            sendBtn.disabled = false;
+            if (sendBtn) sendBtn.disabled = false;
         }
     }
 
     // --- NEW: Image Upload Handler ---
-    imageUploadInput.addEventListener('change', (event) => {
-        toolsPopover.classList.add('hidden'); 
-        const file = event.target.files[0];
+    if (imageUploadInput) {
+        imageUploadInput.addEventListener('change', (event) => {
+            if (toolsPopover) toolsPopover.classList.add('hidden'); 
+            const file = event.target.files[0];
 
-        if (file) {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                uploadedImageBase64 = e.target.result;
-                userInput.placeholder = `Image uploaded (${file.name}). Add a message or press send.`;
-                userInput.focus();
-            };
-            reader.readAsDataURL(file);
-        }
-    });
-
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    uploadedImageBase64 = e.target.result;
+                    if (userInput) userInput.placeholder = `Image uploaded (${file.name}). Add a message or press send.`;
+                    if (userInput) userInput.focus();
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+    }
 
     // --- 5. Core Voice Logic (Same as previous step) ---
     async function toggleRecording() {
-        toolsPopover.classList.add('hidden'); 
+        if (toolsPopover) toolsPopover.classList.add('hidden'); 
         
+        // ... (rest of the voice logic remains the same)
         if (!isRecording) {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -340,22 +333,22 @@ document.addEventListener('DOMContentLoaded', () => {
                     stream.getTracks().forEach(track => track.stop());
                     await sendAudioForTranscription(audioBlob); 
                     
-                    toolsBtnIcon.textContent = 'add'; 
-                    voiceChatOption.innerHTML = '<span class="material-symbols-outlined">mic</span> Voice Chat (Record)';
+                    if (toolsBtnIcon) toolsBtnIcon.textContent = 'add'; 
+                    if (voiceChatOption) voiceChatOption.innerHTML = '<span class="material-symbols-outlined">mic</span> Voice Chat (Record)';
                 };
 
                 mediaRecorder.start();
                 isRecording = true;
                 
-                toolsBtnIcon.textContent = 'stop_circle'; 
-                voiceChatOption.innerHTML = '<span class="material-symbols-outlined" style="color: red;">stop_circle</span> Stop Recording';
+                if (toolsBtnIcon) toolsBtnIcon.textContent = 'stop_circle'; 
+                if (voiceChatOption) voiceChatOption.innerHTML = '<span class="material-symbols-outlined" style="color: red;">stop_circle</span> Stop Recording';
                 renderMessage('assistant', "🎙️ **Recording started.** Speak now...");
             
             } catch (err) {
                 console.error("Microphone access failed:", err);
                 renderMessage('assistant', "🚫 **Microphone Error:** Could not access microphone. Check browser permissions.");
                 isRecording = false;
-                toolsBtnIcon.textContent = 'add';
+                if (toolsBtnIcon) toolsBtnIcon.textContent = 'add';
             }
 
         } else {
@@ -390,40 +383,47 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- 6. Event Listeners (Same as previous step) ---
-    sendBtn.addEventListener('click', () => sendMessage());
+    // --- 6. Event Listeners ---
+    if (sendBtn) sendBtn.addEventListener('click', () => sendMessage());
 
-    userInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            e.preventDefault(); 
-            sendMessage();
-        }
-    });
+    if (userInput) {
+        userInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                e.preventDefault(); 
+                sendMessage();
+            }
+        });
+    }
 
-    toolsBtn.addEventListener('click', (e) => {
-        e.stopPropagation(); 
-        toolsPopover.classList.toggle('hidden'); 
-    });
+    if (toolsBtn) {
+        toolsBtn.addEventListener('click', (e) => {
+            e.stopPropagation(); 
+            if (toolsPopover) toolsPopover.classList.toggle('hidden'); 
+        });
+    }
 
     document.addEventListener('click', (e) => {
-        if (!toolsPopover.contains(e.target) && !toolsBtn.contains(e.target)) {
+        if (toolsPopover && toolsBtn && !toolsPopover.contains(e.target) && !toolsBtn.contains(e.target)) {
             toolsPopover.classList.add('hidden');
         }
     });
 
-    newChatBtn.addEventListener('click', () => {
-        const newId = Date.now();
-        const newChat = { id: newId, title: "New Chat", messages: [] }; 
-        chats.push(newChat);
-        renderChatHistory();
-        loadChat(newId);
-        userInput.focus(); 
-    });
+    if (newChatBtn) {
+        newChatBtn.addEventListener('click', () => {
+            const newId = Date.now();
+            const newChat = { id: newId, title: "New Chat", messages: [] }; 
+            chats.push(newChat);
+            renderChatHistory();
+            loadChat(newId);
+            if (userInput) userInput.focus(); 
+        });
+    }
 
-    voiceChatOption.addEventListener('click', toggleRecording);
+    if (voiceChatOption) voiceChatOption.addEventListener('click', toggleRecording);
     
-    // --- 7. Initialization (Same as previous step) ---
+    // --- 7. Initialization ---
     async function init() {
+        // ... (rest of the init logic remains the same)
         try {
             const response = await fetch('/api/chats');
             const data = await response.json();
@@ -450,10 +450,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 renderChatHistory();
                 loadChat(welcomeId);
             }
-            userInput.focus(); 
+            if (userInput) userInput.focus(); 
         } catch (error) {
             console.error("Initialization failed:", error);
-            chatHeaderTitle.textContent = "Initialization Error";
+            if (chatHeaderTitle) chatHeaderTitle.textContent = "Initialization Error";
             renderMessage('assistant', "**Could not load chat history from the backend API.** Please check if `app.py` is running.");
         }
     }
