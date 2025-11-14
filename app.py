@@ -33,8 +33,8 @@ app = Flask(__name__, static_folder='static', template_folder='templates')
 API_KEY = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "openai/gpt-4o-mini")
 # NEW: multimodal model to use only when sending images — minimal change to original flow
-MULTIMODAL_MODEL = os.getenv("MULTIMODAL_MODEL", "moondream/moondream-2")
-TRANSCRIPTION_MODEL = os.getenv("TRANSCRIPTION_MODEL", "openai/whisper-1")
+MULTIMODAL_MODEL = os.getenv("MULTIMODAL_MODEL", "alibaba/tongyi-deepresearch-30b-a3b:free")
+TRANSCRIPTION_MODEL = os.getenv("TRANSCRIPTION_MODEL", "openai/gpt-oss-20b:free")
 
 SYSTEM_PERSONALITY = """You are ROME — a warm, intelligent assistant created by Mohammad from India for his friend.
 Creator: Mohammad — software developer, graphic designer, social media manager, makeup artist.
