@@ -48,7 +48,7 @@ def call_text_model(messages: list, max_tokens: int = 800, timeout: int = 60):
         return "[No API key found.]"
     
     # URL CHANGED TO OPENAI DIRECT ENDPOINT
-    url = "https://api.openai.com/v1/chat/completions"
+    url = "https://openrouter.ai/api/v1/chat/completions"
     
     # Headers updated for standard OpenAI format
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
