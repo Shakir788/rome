@@ -64,14 +64,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /** Clears chat window and loads messages for the given chat ID. */
     function loadChat(chatId) {
-        // ... (Existing loadChat logic) ...
         const selectedChat = chats.find(c => c.id === chatId);
         if (!selectedChat) {
             // After deletion, if active chat is deleted, load the latest chat
             if (chats.length > 0) {
                  loadChat(chats[chats.length - 1].id);
             } else {
-                 newChatBtn.click(); // If no chats remain, start a new one
+                 // If no chats remain, start a new one (click the New Chat button)
+                 const newId = Date.now();
+                 const newChat = { id: newId, title: "New Chat", messages: [] }; 
+                 chats.push(newChat);
+                 renderChatHistory();
+                 loadChat(newId);
+                 return;
             }
             return;
         }
@@ -98,7 +103,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /** Fetches and renders the list of chats in the sidebar. */
     function renderChatHistory() {
-        // ... (Existing renderChatHistory logic) ...
         const historyLabel = chatHistoryContainer.querySelector('.history-label');
         let nextSibling = historyLabel ? historyLabel.nextSibling : chatHistoryContainer.firstChild;
         while (nextSibling) {
@@ -146,13 +150,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function showContextMenu(x, y, chatId) {
-        removeContextMenu(); // Remove any existing menu first
+        removeContextMenu(); 
 
         const menu = document.createElement('div');
         menu.id = contextMenuId;
         menu.classList.add('context-menu');
-        menu.style.left = `${x}px`;
-        menu.style.top = `${y}px`;
+        
+        // Prevent menu from going off-screen (basic check)
+        const screenWidth = window.innerWidth;
+        const screenHeight = window.innerHeight;
+        menu.style.left = `${x > screenWidth - 200 ? screenWidth - 200 : x}px`;
+        menu.style.top = `${y > screenHeight - 100 ? screenHeight - 100 : y}px`;
         
         // Add Delete Option
         menu.innerHTML = `
@@ -166,8 +174,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Add Listener to Delete Option
         document.querySelector('.delete-option').addEventListener('click', async (e) => {
+            e.stopPropagation(); // Stop propagation to prevent context menu close click
             removeContextMenu();
-            const confirmed = confirm("Are you sure you want to delete this chat permanently?");
+            const confirmed = confirm(`Are you sure you want to delete "${chats.find(c => c.id === chatId)?.title || 'this chat'}" permanently?`);
             if (confirmed) {
                 await deleteChat(chatId);
             }
@@ -210,10 +219,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
 
-    // --- 4. Core Chat Logic ---
+    // --- 4. Core Chat Logic (Remains the same) ---
 
     async function sendMessage(messageFromAudio = null) {
-        // ... (Existing sendMessage logic remains the same) ...
         const message = messageFromAudio || userInput.value.trim();
         if (message === "" || currentChatId === null) return;
         
@@ -262,8 +270,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- 5. Core Voice Logic (Remains the same) ---
-    // ... (toggleRecording, sendAudioForTranscription functions remain the same) ...
-
     async function toggleRecording() {
         toolsPopover.classList.add('hidden'); 
         
