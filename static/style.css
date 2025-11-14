@@ -329,3 +329,33 @@ body {
 .context-menu .delete-option .material-symbols-outlined {
     color: #EA4335; 
 }
+/* --- 7. NEW: Context Menu Styling (For Chat Delete) --- */
+.context-menu {
+    /* FIX: Ensure z-index is high and position is correct */
+    position: fixed;
+    z-index: 1000;
+    background-color: #fff;
+    border: 1px solid #ddd;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    padding: 4px 0;
+}
+
+.context-menu .menu-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 14px;
+    color: #3C4043;
+    transition: background-color 0.2s;
+}
+
+.context-menu .menu-item:hover {
+    background-color: #F1F3F4;
+}
+
+.context-menu .delete-option .material-symbols-outlined {
+    color: #EA4335; /* Red color for delete icon */
+}
