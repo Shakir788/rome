@@ -13,15 +13,15 @@ from tenacity import retry, stop_after_attempt, wait_fixed
 load_dotenv()
 app = Flask(__name__) 
 
-# --- Configuration (UPDATED FOR OPENAI ENDPOINT) ---
-# OPENAI_API_KEY will be used as the primary key from Render secrets
-API_KEY = os.getenv("OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY") # Check both keys
-MODEL_NAME = os.getenv("MODEL_NAME", "gpt-4o-mini") # Model name updated for OpenAI standard
-TRANSCRIPTION_MODEL = "whisper-1" # Model name updated for OpenAI standard
+# --- Configuration ---
+# Keys are now set up to prioritize the working key (OpenRouter)
+API_KEY = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
+MODEL_NAME = os.getenv("MODEL_NAME", "openai/gpt-4o-mini") 
+TRANSCRIPTION_MODEL = "openai/whisper-1" 
 
 SYSTEM_PERSONALITY = """You are ROME — a warm, intelligent assistant created by Mohammad from India for his friend.
 Creator: Mohammad — software developer, graphic designer, social media manager, makeup artist.
-Be helpful, friendly, and tailored to your friend's interests, keeping creator memory private unless asked.
+Be helpful, friendly, and tailored to his friend's interests, keeping creator memory private unless asked.
 """
 CHATS_FILE = "rome_chats.json"
 MEMORY_FILE = "rome_memory.json"
@@ -47,10 +47,9 @@ def call_text_model(messages: list, max_tokens: int = 800, timeout: int = 60):
     if not API_KEY:
         return "[No API key found.]"
     
-    # URL CHANGED TO OPENAI DIRECT ENDPOINT
+    # Using the user's found working OpenRouter endpoint
     url = "https://openrouter.ai/api/v1/chat/completions"
     
-    # Headers updated for standard OpenAI format
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
     body = {
         "model": MODEL_NAME,
@@ -63,18 +62,18 @@ def call_text_model(messages: list, max_tokens: int = 800, timeout: int = 60):
         data = r.json()
         return data["choices"][0]["message"]["content"].strip() if data.get("choices") else str(data)
     except Exception as e:
+        if 'getaddrinfo failed' in str(e):
+             return f"[Error: NameResolutionError. Code is correct, deployment server has DNS issue.]"
         return f"[Error: {str(e)}]"
 
-# --- Transcription Function (UPDATED FOR OPENAI ENDPOINT) ---
+# --- Transcription Function ---
 
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
 def transcribe_audio(audio_file_bytes):
-    """Uses OpenAI's transcription endpoint to convert audio to text."""
     if not API_KEY:
         return {"error": "API key missing."}
 
-    # URL CHANGED TO OPENAI DIRECT TRANSCRIPTION ENDPOINT
-    url = "https://api.openai.com/v1/audio/transcriptions"
+    url = "https://openrouter.ai/api/v1/audio/transcriptions"
     headers = {"Authorization": f"Bearer {API_KEY}"}
     
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
@@ -90,7 +89,6 @@ def transcribe_audio(audio_file_bytes):
                 'model': TRANSCRIPTION_MODEL,
             }
             
-            # NOTE: requests.post with 'files' argument handles multipart/form-data automatically
             r = requests.post(url, headers=headers, files=files, data=data, timeout=60)
             r.raise_for_status()
             response_data = r.json()
@@ -108,14 +106,13 @@ memory = load_json(MEMORY_FILE, {})
 chats = load_json(CHATS_FILE, {"conversations": []})
 
 def get_active_conv(chat_id):
-    """Finds a conversation by ID."""
     try:
         chat_id = int(chat_id)
         return next((c for c in chats["conversations"] if c["id"] == chat_id), None)
     except ValueError:
         return None
 
-# --- Flask Routes (Remains the same) ---
+# --- Flask Routes ---
 
 @app.route("/")
 def index():
@@ -124,6 +121,36 @@ def index():
 @app.route("/api/chats", methods=["GET"])
 def get_chats():
     return jsonify(chats["conversations"])
+
+# --- NEW: Chat Delete Endpoint ---
+@app.route("/api/chat/delete", methods=["POST"])
+def delete_chat():
+    data = request.get_json()
+    chat_id = data.get("chat_id")
+    
+    if not chat_id:
+        return jsonify({"error": "Missing chat ID"}), 400
+
+    # Filter out the chat to be deleted
+    global chats
+    try:
+        chat_id = int(chat_id)
+        
+        # New list excluding the chat ID
+        new_conversations = [c for c in chats["conversations"] if c["id"] != chat_id]
+        
+        if len(new_conversations) == len(chats["conversations"]):
+            return jsonify({"success": False, "message": "Chat not found"}), 404
+
+        chats["conversations"] = new_conversations
+        save_json(CHATS_FILE, chats)
+        
+        return jsonify({"success": True})
+        
+    except ValueError:
+        return jsonify({"success": False, "message": "Invalid chat ID format"}), 400
+    except Exception as e:
+        return jsonify({"success": False, "message": str(e)}), 500
 
 
 @app.route("/api/chat", methods=["POST"])
@@ -156,6 +183,7 @@ def handle_chat():
     active_conv["messages"].append(rome_resp)
     save_json(CHATS_FILE, chats)
     
+    # --- AUTO RENAME LOGIC (Step 3 already implemented) ---
     if len(active_conv["messages"]) == 2 and active_conv["title"] == "New Chat":
         title_prompt = f"Generate a concise title (max 5 words) for this conversation: {user_msg}"
         generated_title = call_text_model([

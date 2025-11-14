@@ -23,13 +23,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const ROME_AVATAR = '/static/assets/rome_logo.png';
     const USER_AVATAR = 'https://cdn-icons-png.flaticon.com/512/149/149071.png';
 
+    // --- NEW: Context Menu (For Delete) ---
+    const contextMenuId = 'history-context-menu';
+    const body = document.body;
+
     // --- 3. Utility Functions ---
     
     function scrollToBottom() {
         chatWindow.scrollTop = chatWindow.scrollHeight;
     }
 
-    /** Renders a single message bubble into the chat window. */
     function renderMessage(role, content, shouldScroll = true) {
         const avatarSrc = (role === 'assistant') ? ROME_AVATAR : USER_AVATAR;
 
@@ -61,9 +64,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /** Clears chat window and loads messages for the given chat ID. */
     function loadChat(chatId) {
+        // ... (Existing loadChat logic) ...
         const selectedChat = chats.find(c => c.id === chatId);
         if (!selectedChat) {
-            console.error("Chat ID not found:", chatId);
+            // After deletion, if active chat is deleted, load the latest chat
+            if (chats.length > 0) {
+                 loadChat(chats[chats.length - 1].id);
+            } else {
+                 newChatBtn.click(); // If no chats remain, start a new one
+            }
             return;
         }
 
@@ -89,6 +98,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /** Fetches and renders the list of chats in the sidebar. */
     function renderChatHistory() {
+        // ... (Existing renderChatHistory logic) ...
         const historyLabel = chatHistoryContainer.querySelector('.history-label');
         let nextSibling = historyLabel ? historyLabel.nextSibling : chatHistoryContainer.firstChild;
         while (nextSibling) {
@@ -109,6 +119,12 @@ document.addEventListener('DOMContentLoaded', () => {
             
             itemDiv.addEventListener('click', () => loadChat(chat.id));
             
+            // --- NEW: Add Context Menu Listener ---
+            itemDiv.addEventListener('contextmenu', (e) => {
+                e.preventDefault(); 
+                showContextMenu(e.clientX, e.clientY, chat.id);
+            });
+            
             chatHistoryContainer.appendChild(itemDiv);
         });
 
@@ -120,13 +136,87 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- NEW: Context Menu Functions ---
+
+    function removeContextMenu() {
+        const menu = document.getElementById(contextMenuId);
+        if (menu) {
+            menu.remove();
+        }
+    }
+
+    function showContextMenu(x, y, chatId) {
+        removeContextMenu(); // Remove any existing menu first
+
+        const menu = document.createElement('div');
+        menu.id = contextMenuId;
+        menu.classList.add('context-menu');
+        menu.style.left = `${x}px`;
+        menu.style.top = `${y}px`;
+        
+        // Add Delete Option
+        menu.innerHTML = `
+            <div class="menu-item delete-option" data-chat-id="${chatId}">
+                <span class="material-symbols-outlined">delete</span>
+                Delete Chat
+            </div>
+        `;
+        
+        body.appendChild(menu);
+
+        // Add Listener to Delete Option
+        document.querySelector('.delete-option').addEventListener('click', async (e) => {
+            removeContextMenu();
+            const confirmed = confirm("Are you sure you want to delete this chat permanently?");
+            if (confirmed) {
+                await deleteChat(chatId);
+            }
+        });
+    }
+
+    document.addEventListener('click', removeContextMenu);
+    document.addEventListener('scroll', removeContextMenu);
+
+    // --- NEW: Delete Chat Logic ---
+    async function deleteChat(chatId) {
+        try {
+            const response = await fetch('/api/chat/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ chat_id: chatId })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                // Remove chat from local array
+                chats = chats.filter(c => c.id !== chatId);
+                
+                // Re-render history
+                renderChatHistory();
+                
+                // If the deleted chat was the active one, load the latest chat
+                if (currentChatId === chatId) {
+                    loadChat(chats.length > 0 ? chats[chats.length - 1].id : null);
+                }
+            } else {
+                renderMessage('assistant', `[ERROR]: **Failed to delete chat: ${data.message}**`);
+            }
+
+        } catch (error) {
+            renderMessage('assistant', `[Network Error]: **Failed to reach delete API.**`);
+            console.error('Delete fetch error:', error);
+        }
+    }
+
+
     // --- 4. Core Chat Logic ---
 
     async function sendMessage(messageFromAudio = null) {
+        // ... (Existing sendMessage logic remains the same) ...
         const message = messageFromAudio || userInput.value.trim();
         if (message === "" || currentChatId === null) return;
         
-        // 1. Display user message immediately
         if (!messageFromAudio) {
             renderMessage('user', message);
             userInput.value = ''; 
@@ -171,7 +261,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- 5. Core Voice Logic ---
+    // --- 5. Core Voice Logic (Remains the same) ---
+    // ... (toggleRecording, sendAudioForTranscription functions remain the same) ...
 
     async function toggleRecording() {
         toolsPopover.classList.add('hidden'); 
@@ -242,7 +333,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // --- 6. Event Listeners ---
+    // --- 6. Event Listeners (Added Context Menu Listeners) ---
     sendBtn.addEventListener('click', () => sendMessage());
 
     userInput.addEventListener('keypress', (e) => {
