@@ -39,13 +39,7 @@
             </header>
 
             <div id="chat-window">
-                <div class="message assistant-message">
-                    <img src="/static/assets/rome_logo.png" alt="ROME" class="avatar">
-                    <div class="content">
-                        Hello! I am ROME, an intelligent assistant created by Mohammad. How can I help you today?
-                    </div>
                 </div>
-            </div>
 
             <div id="input-area-wrapper">
                 <div id="tools-popover" class="hidden">
@@ -53,6 +47,12 @@
                         <span class="material-symbols-outlined">mic</span>
                         Voice Chat (Record)
                     </div>
+                    <label class="popover-item" for="image-upload-input">
+                        <span class="material-symbols-outlined">image</span>
+                        Image Analysis (Upload)
+                    </label>
+                    <input type="file" id="image-upload-input" accept="image/*" style="display: none;">
+                    
                     <div class="popover-item" id="upload-audio-option">
                         <span class="material-symbols-outlined">upload_file</span>
                         Upload Audio/PDF

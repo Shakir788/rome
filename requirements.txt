@@ -3,3 +3,4 @@ requests
 tenacity
 python-dotenv
 gunicorn
+edge-tts
