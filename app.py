@@ -59,19 +59,32 @@ def load_json(path, default):
             return default
     return default
 
-# Keep existing prepare_content_array but will replace base64 by saved URL if needed
-def prepare_content_array(text_prompt, image_url_or_b64):
-    """Prepares the content array for multimodal API call. Accepts either a URL or base64 data URL."""
+# ---------------- Correct multimodal prepare_content_array ----------------
+def prepare_content_array(text_prompt, image_b64):
+    """
+    Prepare a content list suitable for OpenRouter multimodal models.
+    - text_prompt: string
+    - image_b64: raw base64 string (without data:... prefix) OR full data URL
+    Returns list of content parts.
+    """
     content = []
-    # Add text part (some APIs expect specific keys; here we use simple shape)
-    content.append({"type": "text", "text": text_prompt})
-    if image_url_or_b64:
-        # If looks like a data URL (base64), we will expect the caller to have already saved and converted it
-        # into an accessible URL. This function will be fed a URL by the code below.
+
+    if text_prompt:
         content.append({
-            "type": "image_url",
-            "image_url": {"url": image_url_or_b64}
+            "type": "text",
+            "text": text_prompt
         })
+
+    if image_b64:
+        # If the input is a data URL, strip the prefix
+        clean_b64 = image_b64.split(",", 1)[1] if "," in image_b64 else image_b64
+        content.append({
+            "type": "input_image",
+            "image": {
+                "base64": clean_b64
+            }
+        })
+
     return content
 
 # ---------------- Model Call ----------------
@@ -331,16 +344,51 @@ def handle_chat():
 
     rome_resp_content = call_text_model(api_simple_messages)
 
-    # If we have a saved_image_url and text-only succeeded, attempt best-effort multimodal hint call.
+    # If we have a saved_image_url and text-only succeeded, attempt real multimodal call.
     if saved_image_url and isinstance(rome_resp_content, str) and not rome_resp_content.startswith("[Error:"):
-        multimodal_prompt = f"{user_msg}\n\n[Image URL: {request.host_url.rstrip('/')}{saved_image_url}] Please analyze the image and answer the prompt."
-        multimodal_messages = [
-            {"role": "system", "content": SYSTEM_PERSONALITY},
-            {"role": "user", "content": multimodal_prompt}
-        ]
-        mm_resp = call_text_model(multimodal_messages)
-        if isinstance(mm_resp, str) and not mm_resp.startswith("[Error:"):
-            rome_resp_content = mm_resp
+        try:
+            # Convert saved image file to raw base64
+            # saved_image_url is like "/static/uploads/filename.ext" (relative). Strip prefix
+            rel_path = saved_image_url
+            if rel_path.startswith(request.host_url.rstrip('/')):
+                # sometimes frontend gives full URL
+                rel_path = rel_path.replace(request.host_url.rstrip('/'), '')
+            # remove leading /static/uploads/ if present
+            filename_part = rel_path.split('/')[-1]
+            abs_path = os.path.join(UPLOAD_DIR, filename_part)
+
+            with open(abs_path, "rb") as f:
+                raw = f.read()
+                img_b64 = base64.b64encode(raw).decode()
+
+            # Prepare content array with text + image (image base64 raw)
+            mm_content = prepare_content_array(user_msg, img_b64)
+
+            # Build body for multimodal call exactly (content array as user content)
+            mm_body = {
+                "model": MODEL_NAME,
+                "messages": [
+                    {"role": "system", "content": SYSTEM_PERSONALITY},
+                    {"role": "user", "content": mm_content}
+                ],
+                "max_tokens": 800
+            }
+
+            headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
+            r = requests.post("https://openrouter.ai/api/v1/chat/completions", json=mm_body, headers=headers, timeout=60)
+            r.raise_for_status()
+            mm_data = r.json()
+            if mm_data.get("choices"):
+                choice = mm_data["choices"][0]
+                if isinstance(choice.get("message"), dict):
+                    mm_text = choice["message"].get("content", "")
+                else:
+                    mm_text = choice.get("text", "")
+                if mm_text:
+                    rome_resp_content = mm_text
+        except Exception as e:
+            print("[MULTIMODAL] failed:", e)
+            # keep rome_resp_content as text-only response (fallback)
 
     # 3. Add Assistant Message & Save
     rome_resp = {"role": "assistant", "content": rome_resp_content}
