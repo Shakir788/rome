@@ -64,7 +64,6 @@ def load_json(path, default):
 # ---------------- Correct multimodal prepare_content_array ----------------
 def prepare_content_array(text_prompt, image_b64):
     """
-    FIXED:
     OpenRouter Qwen models REQUIRE:
     { "type": "input_image", "image_url": "data:image/png;base64,..." }
     """
@@ -80,7 +79,7 @@ def prepare_content_array(text_prompt, image_b64):
         data_url = f"data:image/png;base64,{image_b64}"
         content.append({
             "type": "input_image",
-            "image_url": data_url     # FIXED
+            "image_url": data_url
         })
 
     return content
@@ -368,7 +367,6 @@ def handle_chat():
 
             # Build body for multimodal call exactly (content array as user content)
             # Use MULTIMODAL_MODEL here so we don't change user's default MODEL_NAME for text-only calls
-            # FIXED multimodal request for Qwen Vision
             mm_body = {
                 "model": MULTIMODAL_MODEL,
                 "messages": [
@@ -381,11 +379,13 @@ def handle_chat():
                 "max_tokens": 800
             }
 
+            # API Key added to headers for the manual requests.post call
             headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
             print(f"[MULTIMODAL] sending to model: {MULTIMODAL_MODEL}")
             r = requests.post("https://openrouter.ai/api/v1/chat/completions", json=mm_body, headers=headers, timeout=60)
             r.raise_for_status()
             mm_data = r.json()
+            
             if mm_data.get("choices"):
                 choice = mm_data["choices"][0]
                 if isinstance(choice.get("message"), dict):
