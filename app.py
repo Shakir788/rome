@@ -32,9 +32,9 @@ app = Flask(__name__, static_folder='static', template_folder='templates')
 # --- Configuration ---
 API_KEY = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "openai/gpt-4o-mini")
-# NEW: multimodal model to use only when sending images — minimal change to original flow
+# Use a multimodal-capable model only for image requests
 MULTIMODAL_MODEL = os.getenv("MULTIMODAL_MODEL", "qwen/qwen2.5-vl-32b-instruct:free")
-TRANSCRIPTION_MODEL = os.getenv("TRANSCRIPTION_MODEL", "openai/gpt-oss-20b:free")
+TRANSCRIPTION_MODEL = os.getenv("TRANSCRIPTION_MODEL", "openai/whisper-1")
 
 SYSTEM_PERSONALITY = """You are ROME — a warm, intelligent assistant created by Mohammad from India for his friend.
 Creator: Mohammad — software developer, graphic designer, social media manager, makeup artist.
@@ -91,20 +91,20 @@ def prepare_content_array(text_prompt, image_b64):
 
 # ---------------- Model Call ----------------
 @retry(stop=stop_after_attempt(5), wait=wait_fixed(3))
-def call_text_model(messages: list, max_tokens: int = 800, timeout: int = 60):
+def call_text_model(messages: list, max_tokens: int = 800, timeout: int = 60, model_override: str = None):
     if not API_KEY:
         return "[Error: No API key found. Set OPENROUTER_API_KEY or OPENAI_API_KEY in .env]"
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {"Authorization": f"Bearer {API_KEY}", "Content-Type": "application/json"}
     body = {
-        "model": MODEL_NAME,
+        "model": model_override or MODEL_NAME,
         "messages": messages,
         "max_tokens": max_tokens,
     }
     try:
         # Debug prints (appear in terminal) - useful while testing
         print("[call_text_model] -> POST", url)
-        print("[call_text_model] model:", MODEL_NAME, "messages_count:", len(messages))
+        print("[call_text_model] model:", body["model"], "messages_count:", len(messages))
         r = requests.post(url, json=body, headers=headers, timeout=timeout)
         r.raise_for_status()
         data = r.json()
@@ -165,7 +165,7 @@ def _save_bytes_to_static(data_bytes, filename_prefix="rome_tts"):
     return url_for('static', filename=f"uploads/{fname}", _external=False)
 
 async def _edge_tts_generate(text, voice="en-US-AriaNeural"):
-    """Generate TTS with edge-tts, return path (relative) or raise."""
+    """Generate TTS with edge-tts, return bytes."""
     out_tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".mp3")
     out_name = out_tmp.name
     out_tmp.close()
@@ -350,15 +350,18 @@ def handle_chat():
     if saved_image_url and isinstance(rome_resp_content, str) and not rome_resp_content.startswith("[Error:"):
         try:
             # Convert saved image file to raw base64
-            # saved_image_url is like "/static/uploads/filename.ext" (relative). Strip prefix
+            # saved_image_url may be full URL or relative path like "/static/uploads/filename.ext"
             rel_path = saved_image_url
-            if rel_path.startswith(request.host_url.rstrip('/')):
-                # sometimes frontend gives full URL
-                rel_path = rel_path.replace(request.host_url.rstrip('/'), '')
-            # remove leading /static/uploads/ if present
-            filename_part = rel_path.split('/')[-1]
-            abs_path = os.path.join(Upload_DIR := UPLOAD_DIR, filename_part)
+            # If frontend provided full absolute URL, strip host_url
+            host_prefix = request.host_url.rstrip('/')
+            if isinstance(rel_path, str) and rel_path.startswith(host_prefix):
+                rel_path = rel_path.replace(host_prefix, "")
 
+            # Extract filename and build absolute path in uploads dir
+            filename_part = rel_path.split('/')[-1]
+            abs_path = os.path.join(UPLOAD_DIR, filename_part)
+
+            # Read file and convert to base64
             with open(abs_path, "rb") as f:
                 raw = f.read()
                 img_b64 = base64.b64encode(raw).decode()
