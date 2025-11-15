@@ -33,7 +33,7 @@ app = Flask(__name__, static_folder='static', template_folder='templates')
 API_KEY = os.getenv("OPENROUTER_API_KEY") or os.getenv("OPENAI_API_KEY")
 MODEL_NAME = os.getenv("MODEL_NAME", "openai/gpt-4o-mini")
 # Use a multimodal-capable model only for image requests
-MULTIMODAL_MODEL = os.getenv("MULTIMODAL_MODEL", "qwen/qwen2.5-vl-32b-instruct:free")
+MULTIMODAL_MODEL = os.getenv("MULTIMODAL_MODEL", "qwen/qwen2.5-vl-7b-instruct:freeze")
 TRANSCRIPTION_MODEL = os.getenv("TRANSCRIPTION_MODEL", "openai/whisper-1")
 
 SYSTEM_PERSONALITY = """You are ROME — a warm, intelligent assistant created by Mohammad from India for his friend.
@@ -64,10 +64,9 @@ def load_json(path, default):
 # ---------------- Correct multimodal prepare_content_array ----------------
 def prepare_content_array(text_prompt, image_b64):
     """
-    Prepare a content list suitable for OpenRouter multimodal models.
-    - text_prompt: string
-    - image_b64: raw base64 string (without data:... prefix) OR full data URL
-    Returns list of content parts.
+    FIXED:
+    OpenRouter Qwen models REQUIRE:
+    { "type": "input_image", "image_url": "data:image/png;base64,..." }
     """
     content = []
 
@@ -78,16 +77,14 @@ def prepare_content_array(text_prompt, image_b64):
         })
 
     if image_b64:
-        # If the input is a data URL, strip the prefix
-        clean_b64 = image_b64.split(",", 1)[1] if "," in image_b64 else image_b64
+        data_url = f"data:image/png;base64,{image_b64}"
         content.append({
             "type": "input_image",
-            "image": {
-                "base64": clean_b64
-            }
+            "image_url": data_url     # FIXED
         })
 
     return content
+
 
 # ---------------- Model Call ----------------
 @retry(stop=stop_after_attempt(5), wait=wait_fixed(3))
@@ -371,11 +368,15 @@ def handle_chat():
 
             # Build body for multimodal call exactly (content array as user content)
             # Use MULTIMODAL_MODEL here so we don't change user's default MODEL_NAME for text-only calls
+            # FIXED multimodal request for Qwen Vision
             mm_body = {
                 "model": MULTIMODAL_MODEL,
                 "messages": [
                     {"role": "system", "content": SYSTEM_PERSONALITY},
-                    {"role": "user", "content": mm_content}
+                    {
+                        "role": "user",
+                        "content": mm_content      # this now has correct image_url
+                    }
                 ],
                 "max_tokens": 800
             }
